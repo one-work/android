@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 双向箭头（对照 iOS SF Symbol: arrow.left.arrow.right） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M7.5,10.5 L4,14 L7.5,17.5 L7.5,15 L16.5,15 L16.5,13 L7.5,13 Z M16.5,6.5 L16.5,9 L7.5,9 L7.5,11 L16.5,11 L16.5,13.5 L20,10 Z" />
+</vector>

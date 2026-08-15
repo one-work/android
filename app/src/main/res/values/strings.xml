@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Xcprinter</string>
+    <string name="tab_home">Home</string>
+    <string name="tab_help">Help</string>
+    <string name="tab_bugs">Bugs &amp; Fixes</string>
+    <string name="close">关闭</string>
+</resources>
