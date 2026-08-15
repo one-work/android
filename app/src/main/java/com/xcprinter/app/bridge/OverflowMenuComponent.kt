@@ -18,55 +18,55 @@ import kotlinx.serialization.Serializable
  * url 缺省为 https://linlishenghuo.com/bluetooth/menus。
  */
 class OverflowMenuComponent(
-    name: String,
-    private val delegate: BridgeDelegate<HotwireDestination>
+  name: String,
+  private val delegate: BridgeDelegate<HotwireDestination>
 ) : BridgeComponent<HotwireDestination>(name, delegate) {
-
-    private var formUrl: String? = null
-
-    override fun onReceive(message: Message) {
-        when (message.event) {
-            "connect" -> handleConnectEvent(message)
-            else -> Log.w(TAG, "Unknown event for message: $message")
-        }
+  
+  private var formUrl: String? = null
+  
+  override fun onReceive(message: Message) {
+    when (message.event) {
+      "connect" -> handleConnectEvent(message)
+      else -> Log.w(TAG, "Unknown event for message: $message")
     }
-
-    private fun handleConnectEvent(message: Message) {
-        val data = message.data<MessageData>() ?: return
-        data.url?.let { formUrl = it }
-        showOverflowMenuItem(data)
+  }
+  
+  private fun handleConnectEvent(message: Message) {
+    val data = message.data<MessageData>() ?: return
+    data.url?.let { formUrl = it }
+    showOverflowMenuItem(data)
+  }
+  
+  private fun showOverflowMenuItem(data: MessageData) {
+    val toolbar = delegate.destination.toolbarForNavigation() ?: return
+    
+    toolbar.menu.removeItem(MENU_ITEM_ID)
+    val item = toolbar.menu.add(Menu.NONE, MENU_ITEM_ID, Menu.NONE, data.label)
+    item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+    
+    toolbar.setOnMenuItemClickListener {
+      if (it.itemId == MENU_ITEM_ID) {
+        performClick()
+        true
+      } else {
+        false
+      }
     }
+  }
 
-    private fun showOverflowMenuItem(data: MessageData) {
-        val toolbar = delegate.destination.toolbarForNavigation() ?: return
+  private fun performClick() {
+    delegate.destination.navigator.route(formUrl ?: DEFAULT_FORM_URL)
+  }
 
-        toolbar.menu.removeItem(MENU_ITEM_ID)
-        val item = toolbar.menu.add(Menu.NONE, MENU_ITEM_ID, Menu.NONE, data.label)
-        item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+  @Serializable
+  private data class MessageData(
+    @SerialName("label") val label: String,
+    @SerialName("url") val url: String? = null
+  )
 
-        toolbar.setOnMenuItemClickListener {
-            if (it.itemId == MENU_ITEM_ID) {
-                performClick()
-                true
-            } else {
-                false
-            }
-        }
-    }
-
-    private fun performClick() {
-        delegate.destination.navigator.route(formUrl ?: DEFAULT_FORM_URL)
-    }
-
-    @Serializable
-    private data class MessageData(
-        @SerialName("label") val label: String,
-        @SerialName("url") val url: String? = null
-    )
-
-    private companion object {
-        const val TAG = "OverflowMenuComponent"
-        const val MENU_ITEM_ID = 0xF10E7
-        const val DEFAULT_FORM_URL = "https://linlishenghuo.com/bluetooth/menus"
-    }
+  private companion object {
+    const val TAG = "OverflowMenuComponent"
+    const val MENU_ITEM_ID = 0xF10E7
+    const val DEFAULT_FORM_URL = "https://linlishenghuo.com/bluetooth/menus"
+  }
 }

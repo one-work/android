@@ -16,39 +16,39 @@ import kotlinx.serialization.Serializable
  * 文字按钮，点击时回复 "connect"（不带数据）。
  */
 class RightButtonComponent(
-    name: String,
-    private val delegate: BridgeDelegate<HotwireDestination>
+  name: String,
+  private val delegate: BridgeDelegate<HotwireDestination>
 ) : BridgeComponent<HotwireDestination>(name, delegate) {
-
-    override fun onReceive(message: Message) {
-        val data = message.data<MessageData>() ?: return
-        addButton(data)
+  
+  override fun onReceive(message: Message) {
+    val data = message.data<MessageData>() ?: return
+    addButton(data)
+  }
+  
+  private fun addButton(data: MessageData) {
+    val toolbar = delegate.destination.toolbarForNavigation() ?: return
+    
+    // 幂等：先移除旧按钮再添加
+    toolbar.menu.removeItem(MENU_ITEM_ID)
+    val item = toolbar.menu.add(Menu.NONE, MENU_ITEM_ID, Menu.NONE, data.title)
+    item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+    
+    toolbar.setOnMenuItemClickListener {
+      if (it.itemId == MENU_ITEM_ID) {
+        replyTo("connect")
+        true
+      } else {
+        false
+      }
     }
+  }
 
-    private fun addButton(data: MessageData) {
-        val toolbar = delegate.destination.toolbarForNavigation() ?: return
+  @Serializable
+  private data class MessageData(
+    @SerialName("title") val title: String
+  )
 
-        // 幂等：先移除旧按钮再添加
-        toolbar.menu.removeItem(MENU_ITEM_ID)
-        val item = toolbar.menu.add(Menu.NONE, MENU_ITEM_ID, Menu.NONE, data.title)
-        item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-
-        toolbar.setOnMenuItemClickListener {
-            if (it.itemId == MENU_ITEM_ID) {
-                replyTo("connect")
-                true
-            } else {
-                false
-            }
-        }
-    }
-
-    @Serializable
-    private data class MessageData(
-        @SerialName("title") val title: String
-    )
-
-    private companion object {
-        const val MENU_ITEM_ID = 0xB1770
-    }
+  private companion object {
+    const val MENU_ITEM_ID = 0xB1770
+  }
 }

@@ -18,21 +18,14 @@ import dev.hotwire.navigation.routing.Router
  * 非 http/https 链接由系统 handler（SystemNavigationRouteDecisionHandler）处理。
  */
 class ExternalRouteDecisionHandler : Router.RouteDecisionHandler {
-    override val name = "external"
+  override val name = "external"
 
-    override fun matches(
-        proposal: VisitProposal,
-        configuration: NavigatorConfiguration
-    ): Boolean {
-        val scheme = proposal.location.toUri().scheme
-        return scheme == "http" || scheme == "https"
-    }
+  override fun matches(proposal: VisitProposal, configuration: NavigatorConfiguration): Boolean {
+    val scheme = proposal.location.toUri().scheme
+    return scheme == "http" || scheme == "https"
+  }
 
-    override fun handle(
-        proposal: VisitProposal,
-        configuration: NavigatorConfiguration,
-        activity: HotwireActivity
-    ): Router.Decision {
-        return Router.Decision.NAVIGATE
-    }
+  override fun handle(proposal: VisitProposal, configuration: NavigatorConfiguration, activity: HotwireActivity): Router.Decision {
+    return Router.Decision.NAVIGATE
+  }
 }

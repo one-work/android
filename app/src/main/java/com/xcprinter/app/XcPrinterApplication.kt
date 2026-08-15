@@ -22,53 +22,53 @@ import com.xcprinter.app.features.web.WebFragment
 import com.xcprinter.app.routing.ExternalRouteDecisionHandler
 
 class XcPrinterApplication : Application() {
-    override fun onCreate() {
-        super.onCreate()
-        configureHotwire()
-        BluetoothPrinterManager.initialize(this)
-    }
+  override fun onCreate() {
+    super.onCreate()
+    configureHotwire()
+    BluetoothPrinterManager.initialize(this)
+  }
 
-    private fun configureHotwire() {
-        // Path configuration：本地 asset + 远程双来源（对照 iOS AppDelegate）
-        Hotwire.loadPathConfiguration(
-            context = this,
-            location = PathConfiguration.Location(
-                assetFilePath = "path-configuration.json",
-                remoteFileUrl = "https://linlishenghuo.com/configurations/android_v1.json"
-            )
-        )
+  private fun configureHotwire() {
+    // Path configuration：本地 asset + 远程双来源（对照 iOS AppDelegate）
+    Hotwire.loadPathConfiguration(
+      context = this,
+      location = PathConfiguration.Location(
+        assetFilePath = "path-configuration.json",
+        remoteFileUrl = "https://linlishenghuo.com/configurations/android_v1.json"
+      )
+    )
 
-        // 默认 Fragment destination
-        Hotwire.defaultFragmentDestination = WebFragment::class
+    // 默认 Fragment destination
+    Hotwire.defaultFragmentDestination = WebFragment::class
 
-        // 注册自定义 Fragment destinations
-        Hotwire.registerFragmentDestinations(
-            WebFragment::class,
-            WebBottomSheetFragment::class
-        )
+    // 注册自定义 Fragment destinations
+    Hotwire.registerFragmentDestinations(
+      WebFragment::class,
+      WebBottomSheetFragment::class
+    )
 
-        // 注册桥接组件（与 iOS 同名）
-        Hotwire.registerBridgeComponents(
-            BridgeComponentFactory("scan", ::ScanComponent),
-            BridgeComponentFactory("bluetooth", ::BluetoothComponent),
-            BridgeComponentFactory("right-button", ::RightButtonComponent),
-            BridgeComponentFactory("apple-sign-in", ::AppleSignInComponent),
-            BridgeComponentFactory("overflow-menu", ::OverflowMenuComponent)
-        )
+    // 注册桥接组件（与 iOS 同名）
+    Hotwire.registerBridgeComponents(
+      BridgeComponentFactory("scan", ::ScanComponent),
+      BridgeComponentFactory("bluetooth", ::BluetoothComponent),
+      BridgeComponentFactory("right-button", ::RightButtonComponent),
+      BridgeComponentFactory("apple-sign-in", ::AppleSignInComponent),
+      BridgeComponentFactory("overflow-menu", ::OverflowMenuComponent)
+    )
 
-        // 路由决策：
-        // 1. external —— 所有 http/https 链接（含跨域）都在 App 内原生打开
-        // 2. system-navigation —— mailto:、tel: 等非 http/https 交给系统
-        // 3. app-navigation —— 库内置同域导航兜底
-        Hotwire.registerRouteDecisionHandlers(
-            ExternalRouteDecisionHandler(),
-            SystemNavigationRouteDecisionHandler(),
-            AppNavigationRouteDecisionHandler()
-        )
+    // 路由决策：
+    // 1. external —— 所有 http/https 链接（含跨域）都在 App 内原生打开
+    // 2. system-navigation —— mailto:、tel: 等非 http/https 交给系统
+    // 3. app-navigation —— 库内置同域导航兜底
+    Hotwire.registerRouteDecisionHandlers(
+      ExternalRouteDecisionHandler(),
+      SystemNavigationRouteDecisionHandler(),
+      AppNavigationRouteDecisionHandler()
+    )
 
-        // 配置项（对照 iOS AppDelegate）
-        Hotwire.config.applicationUserAgentPrefix = "Hotwire"
-        Hotwire.config.webViewDebuggingEnabled = true
-        Hotwire.config.jsonConverter = KotlinXJsonConverter()
-    }
+    // 配置项（对照 iOS AppDelegate）
+    Hotwire.config.applicationUserAgentPrefix = "Hotwire"
+    Hotwire.config.webViewDebuggingEnabled = true
+    Hotwire.config.jsonConverter = KotlinXJsonConverter()
+  }
 }
