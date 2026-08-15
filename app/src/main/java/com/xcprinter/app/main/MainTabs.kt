@@ -25,25 +25,8 @@ private val help = HotwireBottomTab(
   )
 )
 
-private val bugsAndFixes = HotwireBottomTab(
-  title = "Bugs & Fixes",
-  iconResId = R.drawable.ic_tab_bugs,
-  configuration = NavigatorConfiguration(
-    name = "bugs-fixes",
-    navigatorHostId = R.id.bugs_navigator_host,
-    startLocation = "${Demo.current}/bugs"
-  )
-)
-
 /**
- * 底部 Tab（对照 iOS Lib/Tabs.swift）：
- * 仅当连接本地开发服务器（Demo.current == Demo.local）时追加 "Bugs & Fixes"。
+ * 底部 Tab（对照 iOS Lib/Tabs.swift）。
  */
 val mainTabs: List<HotwireBottomTab>
-  get() = buildList {
-    add(home)
-    add(help)
-    if (Demo.isLocal) {
-      add(bugsAndFixes)
-    }
-  }
+  get() = listOf(home, help)
