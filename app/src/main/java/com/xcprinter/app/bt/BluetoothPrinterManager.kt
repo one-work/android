@@ -102,7 +102,8 @@ object BluetoothPrinterManager {
    * （对照 iOS CBCentralManager 初始化时立即触发 didUpdateState）。
    */
   fun refreshReadyState() {
-    if (bluetoothAdapter?.isEnabled == true) {
+    // API 31+ 调用 isEnabled 需要 BLUETOOTH_CONNECT 权限，否则抛 SecurityException
+    if (hasBluetoothPermissions() && bluetoothAdapter?.isEnabled == true) {
       onReady?.invoke(true)
     }
   }
@@ -270,10 +271,9 @@ object BluetoothPrinterManager {
   
   // MARK: - 权限检查
   
-  fun hasBluetoothPermissions(): Boolean {
-    if (!::appContext.isInitialized) return false
-    
-    val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+  /** 按系统版本返回所需的蓝牙运行时权限 */
+  fun requiredPermissions(): Array<String> =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       arrayOf(
         Manifest.permission.BLUETOOTH_SCAN,
         Manifest.permission.BLUETOOTH_CONNECT
@@ -282,7 +282,10 @@ object BluetoothPrinterManager {
       arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
     }
 
-    return permissions.all {
+  fun hasBluetoothPermissions(): Boolean {
+    if (!::appContext.isInitialized) return false
+
+    return requiredPermissions().all {
       ContextCompat.checkSelfPermission(appContext, it) == PackageManager.PERMISSION_GRANTED
     }
   }

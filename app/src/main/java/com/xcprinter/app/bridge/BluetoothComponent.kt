@@ -3,6 +3,8 @@ package com.xcprinter.app.bridge
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import dev.hotwire.core.bridge.BridgeComponent
 import dev.hotwire.core.bridge.BridgeDelegate
@@ -35,14 +37,49 @@ class BluetoothComponent(
     
     when (message.event) {
       "connect" -> handleConnect()
-      "search" -> BluetoothPrinterManager.startScan()
-      "connect_device" -> handleConnectDevice(message)
+      "search" -> ensurePermissionsThen { BluetoothPrinterManager.startScan() }
+      "connect_device" -> ensurePermissionsThen { handleConnectDevice(message) }
       "disconnect_device" -> handleDisconnectDevice(message)
-      "send_data" -> handleSendData(message)
+      "send_data" -> ensurePermissionsThen { handleSendData(message) }
       else -> Log.w(TAG, "Unknown event for message: $message")
     }
   }
   
+  // 蓝牙相关操作前的权限保障：已授权直接执行，否则先弹运行时权限申请，
+  // 授权结果返回后继续执行（无论是否授权都执行，Manager 内部会兜底失败回调）。
+  private var pendingAction: (() -> Unit)? = null
+  private var permissionLauncher: ActivityResultLauncher<Array<String>>? = null
+
+  private fun ensurePermissionsThen(action: () -> Unit) {
+    if (BluetoothPrinterManager.hasBluetoothPermissions()) {
+      action()
+      return
+    }
+
+    val activity = fragment.activity ?: run {
+      Log.w(TAG, "无法申请蓝牙权限：Fragment 未附加到 Activity")
+      return
+    }
+
+    pendingAction = action
+    permissionLauncher?.unregister()
+    // 使用 Activity 的 ActivityResultRegistry，可在任意时刻注册（不受 Fragment 生命周期限制）
+    val launcher = activity.activityResultRegistry.register(
+      PERMISSION_REQUEST_KEY,
+      ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+      permissionLauncher?.unregister()
+      permissionLauncher = null
+      val granted = result.isNotEmpty() && result.values.all { it }
+      if (!granted) Log.w(TAG, "蓝牙权限被拒绝")
+      val action2 = pendingAction
+      pendingAction = null
+      action2?.invoke()
+    }
+    permissionLauncher = launcher
+    launcher.launch(BluetoothPrinterManager.requiredPermissions())
+  }
+
   // 对照 iOS setupBluetoothManager：先设置好各回调
   private fun setupBluetoothManager() {
     BluetoothPrinterManager.onReady = { ready ->
@@ -151,5 +188,6 @@ class BluetoothComponent(
   private companion object {
     const val TAG = "BluetoothComponent"
     const val PREFS_NAME = "bluetooth"
+    const val PERMISSION_REQUEST_KEY = "bluetooth_permissions"
   }
 }
