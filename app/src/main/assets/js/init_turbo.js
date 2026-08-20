@@ -8,4 +8,4 @@
  document.head.appendChild(script)
 
  console.debug('注入 Turbo Mock js 成功！')
-})()
+})();

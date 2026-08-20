@@ -75,7 +75,10 @@ internal object WebViewBehavior {
           context.assets.open(path).bufferedReader().use { it.readText() }
         }.getOrNull()
       }
-      .joinToString("\n")
+      // 必须以分号分隔：各文件是无分号结尾的 IIFE，直接用 "\n" 拼接时
+      // JS 不会自动断句（ASI），后一个文件的 "(" 会被解析成对前一个
+      // IIFE 返回值的调用，抛 TypeError 导致后续脚本全部不执行。
+      .joinToString(";\n")
   }
 
   // ------------------------------------------------------------------
