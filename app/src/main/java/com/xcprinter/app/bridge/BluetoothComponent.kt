@@ -24,10 +24,10 @@ class BluetoothComponent(
   name: String,
   private val delegate: BridgeDelegate<HotwireDestination>
 ) : BridgeComponent<HotwireDestination>(name, delegate) {
-  
+
   private val fragment: Fragment
     get() = delegate.destination.fragment
-  
+
   private val prefs: SharedPreferences
     get() = fragment.requireContext()
       .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -52,7 +52,7 @@ class BluetoothComponent(
       else -> Log.w(TAG, "Unknown event for message: $message")
     }
   }
-  
+
   // 蓝牙相关操作前的权限保障：已授权直接执行，否则先弹运行时权限申请，
   // 授权结果返回后继续执行（无论是否授权都执行，Manager 内部会兜底失败回调）。
   private var pendingAction: (() -> Unit)? = null
@@ -127,7 +127,7 @@ class BluetoothComponent(
     
     replyTo("connect", ConnectStatus(address = address, name = name, state = state))
   }
-  
+
   private fun handleConnectDevice(message: Message) {
     val data = message.data<ConnectDeviceData>() ?: return
     prefs.edit()
@@ -136,7 +136,7 @@ class BluetoothComponent(
       .apply()
     BluetoothPrinterManager.connect(data.address)
   }
-  
+
   private fun handleDisconnectDevice(message: Message) {
     val data = message.data<DisconnectDeviceData>() ?: return
     prefs.edit()

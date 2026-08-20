@@ -44,22 +44,22 @@ data class SendResultData(
 object BluetoothPrinterManager {
   private const val TAG = "BluetoothPrinterManager"
   private const val SCAN_DURATION_MS = 5_000L
-  
-  // MARK: - Callbacks（对照 iOS 回调属性）
+
+  // Callbacks
   var onReady: ((Boolean) -> Unit)? = null
   var onDeviceFound: ((DeviceInfo) -> Unit)? = null
   var onConnected: ((Boolean) -> Unit)? = null
   var onDisconnected: ((Boolean) -> Unit)? = null
   var onDataSent: ((SendResultData) -> Unit)? = null
-  
-  // MARK: - Properties
+
+  // Properties
   private lateinit var appContext: Context
   private val handler = Handler(Looper.getMainLooper())
-  
+
   private val bluetoothAdapter: BluetoothAdapter? by lazy {
     appContext.getSystemService(BluetoothManager::class.java)?.adapter
   }
-  
+
   private val discoveredDevices = mutableListOf<BluetoothDevice>()
   private var gatt: BluetoothGatt? = null
   private var targetCharacteristic: BluetoothGattCharacteristic? = null
@@ -70,17 +70,17 @@ object BluetoothPrinterManager {
     private set
   
   private var stateReceiver: BroadcastReceiver? = null
-  
+
   fun initialize(context: Context) {
     appContext = context.applicationContext
     registerStateReceiver()
   }
   
-  // MARK: - Ready（对照 iOS centralManagerDidUpdateState）
-  
+  // Ready（对照 iOS centralManagerDidUpdateState）
+
   private fun registerStateReceiver() {
     if (stateReceiver != null) return
-    
+
     val receiver = object : BroadcastReceiver() {
       override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
@@ -108,8 +108,8 @@ object BluetoothPrinterManager {
     }
   }
   
-  // MARK: - Scan（对照 iOS startScan）
-  
+  // Scan
+
   @Volatile
   private var isScanning = false
   private val stopScanRunnable = Runnable { stopScan() }
