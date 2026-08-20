@@ -110,6 +110,10 @@ object BluetoothPrinterManager {
   
   // MARK: - Scan（对照 iOS startScan）
   
+  @Volatile
+  private var isScanning = false
+  private val stopScanRunnable = Runnable { stopScan() }
+  
   fun startScan() {
     val scanner = bluetoothAdapter?.bluetoothLeScanner
     if (scanner == null || !hasBluetoothPermissions()) {
@@ -120,13 +124,22 @@ object BluetoothPrinterManager {
     discoveredDevices.clear()
     stopScan()
     
-    handler.postDelayed({ stopScan() }, SCAN_DURATION_MS)
-    scanner.startScan(scanCallback)
+    try {
+      scanner.startScan(scanCallback)
+      isScanning = true
+      handler.postDelayed(stopScanRunnable, SCAN_DURATION_MS)
+    } catch (e: IllegalStateException) {
+      // 蓝牙在扫描启动瞬间被关闭时系统会抛 IllegalStateException
+      Log.w(TAG, "启动扫描失败", e)
+    }
   }
   
   private fun stopScan() {
+    if (!isScanning) return
+    isScanning = false
+    handler.removeCallbacks(stopScanRunnable)
     if (hasBluetoothPermissions()) {
-      bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback)
+      runCatching { bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback) }
     }
   }
   

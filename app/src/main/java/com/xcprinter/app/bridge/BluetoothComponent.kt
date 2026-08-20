@@ -32,9 +32,17 @@ class BluetoothComponent(
     get() = fragment.requireContext()
       .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
   
+  // manager 回调设置 + 首次 ready 回调只做一次（对照 iOS CBCentralManager
+  // 初始化时 didUpdateState 只触发一次）。否则每条 JS 消息都会重复触发
+  // refreshReadyState -> replyTo("connect", ready=true)，与 JS 形成死循环。
+  private var didSetupManager = false
+
   override fun onReceive(message: Message) {
-    setupBluetoothManager()
-    
+    if (!didSetupManager) {
+      didSetupManager = true
+      setupBluetoothManager()
+    }
+
     when (message.event) {
       "connect" -> handleConnect()
       "search" -> ensurePermissionsThen { BluetoothPrinterManager.startScan() }
