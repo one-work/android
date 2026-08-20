@@ -133,7 +133,7 @@ object BluetoothPrinterManager {
       Log.w(TAG, "启动扫描失败", e)
     }
   }
-  
+
   private fun stopScan() {
     if (!isScanning) return
     isScanning = false
@@ -142,7 +142,7 @@ object BluetoothPrinterManager {
       runCatching { bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback) }
     }
   }
-  
+
   private val scanCallback = object : ScanCallback() {
     override fun onScanResult(callbackType: Int, result: ScanResult) {
       val device = result.device
@@ -154,31 +154,29 @@ object BluetoothPrinterManager {
     }
   }
   
-  // MARK: - Connect（对照 iOS connect）
-  
+  // Connect
   fun connect(address: String) {
     val adapter = bluetoothAdapter
     if (adapter == null || !hasBluetoothPermissions()) {
       onConnected?.invoke(false)
       return
     }
-    
+
     val device = discoveredDevices.firstOrNull { it.address == address }
       ?: runCatching { adapter.getRemoteDevice(address) }.getOrNull()
-    
+
     if (device == null) {
       onConnected?.invoke(false)
       return
     }
-    
+
     closeGatt()
     connectInProgress = true
     connectionState = "connecting"
     gatt = device.connectGatt(appContext, false, gattCallback)
   }
-  
-  // MARK: - Disconnect（对照 iOS disconnect）
-  
+
+  // Disconnect
   fun disconnect(address: String) {
     val current = gatt ?: run {
       onDisconnected?.invoke(true)
@@ -218,8 +216,7 @@ object BluetoothPrinterManager {
     }
   }
   
-  // MARK: - GATT 回调
-  
+  // GATT 回调
   private val gattCallback = object : BluetoothGattCallback() {
     override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
       when (newState) {
