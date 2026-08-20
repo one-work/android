@@ -24,6 +24,36 @@ internal object WebViewBehavior {
   }
 
   // ------------------------------------------------------------------
+  // 跨域导航修复：
+  // Turbo 的 visit 通过 fetch 请求页面，跨域 fetch 会被 CORS 拦截，
+  // 导致跨域页面无法打开（回调 onVisitErrorReceived，错误码 Unknown）。
+  // 跨域场景必须让 WebView 整页冷启动加载（cold boot）。
+  // 在 Fragment onStart() 时判断：WebView 当前停留的 URL 与本 destination
+  // 的 location 不同源时，先 reset session（清除 isReady 标志），迫使本次
+  // visit 走 visitLocationAsColdBoot（WebView.loadUrl 整页加载），
+  // 绕开 Turbo fetch / CORS 限制。同域导航不受影响，仍走 Turbo 局部刷新。
+  // （对照 iOS 用独立 ExternalWebSession 承载跨域页面的做法。）
+  // ------------------------------------------------------------------
+
+  fun resetSessionIfCrossOrigin(destination: HotwireDestination) {
+    val session = destination.navigator.session
+    val currentUrl = session.webView.url ?: return
+    val targetUrl = destination.location
+
+    if (isCrossOrigin(currentUrl, targetUrl)) {
+      session.reset()
+    }
+  }
+
+  private fun isCrossOrigin(first: String, second: String): Boolean {
+    val firstUri = first.toUri()
+    val secondUri = second.toUri()
+    return firstUri.scheme != secondUri.scheme ||
+        firstUri.host != secondUri.host ||
+        firstUri.port != secondUri.port
+  }
+
+  // ------------------------------------------------------------------
   // JS 注入（对照 iOS 的 WKUserScript，atDocumentEnd）
   // Android 没有 WKUserScript，等价做法是在冷启动页面加载完成后注入。
   // 脚本自带防重复 guard（检测元素 id），重复注入安全。

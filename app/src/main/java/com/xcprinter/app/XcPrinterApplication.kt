@@ -4,6 +4,7 @@ import android.app.Application
 import dev.hotwire.core.bridge.BridgeComponentFactory
 import dev.hotwire.core.bridge.KotlinXJsonConverter
 import dev.hotwire.core.config.Hotwire
+import dev.hotwire.core.logging.HotwireLogLevel
 import dev.hotwire.core.turbo.config.PathConfiguration
 import dev.hotwire.navigation.config.defaultFragmentDestination
 import dev.hotwire.navigation.config.registerBridgeComponents
@@ -70,5 +71,8 @@ class XcPrinterApplication : Application() {
     Hotwire.config.applicationUserAgentPrefix = "Hotwire"
     Hotwire.config.webViewDebuggingEnabled = true
     Hotwire.config.jsonConverter = KotlinXJsonConverter()
+
+    // 开启 Hotwire 内部日志（调试跨域导航问题，tag: Hotwire-Core / Hotwire-Navigation）
+    Hotwire.config.logger.logLevel = HotwireLogLevel.DEBUG
   }
 }

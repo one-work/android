@@ -13,6 +13,12 @@ import dev.hotwire.navigation.fragments.HotwireWebBottomSheetFragment
 @HotwireDestinationDeepLink(uri = "hotwire://fragment/web/modal/sheet")
 class WebBottomSheetFragment : HotwireWebBottomSheetFragment() {
 
+  override fun onStart() {
+    // 跨域导航前强制 cold boot，必须在 super.onStart() 触发 visit 之前执行
+    WebViewBehavior.resetSessionIfCrossOrigin(this)
+    super.onStart()
+  }
+
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
     WebViewBehavior.addModalCloseButtonIfNeeded(this)

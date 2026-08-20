@@ -15,6 +15,12 @@ import dev.hotwire.navigation.fragments.HotwireWebFragment
 @HotwireDestinationDeepLink(uri = "hotwire://fragment/web")
 open class WebFragment : HotwireWebFragment() {
 
+  override fun onStart() {
+    // 跨域导航前强制 cold boot，必须在 super.onStart() 触发 visit 之前执行
+    WebViewBehavior.resetSessionIfCrossOrigin(this)
+    super.onStart()
+  }
+
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
     WebViewBehavior.addModalCloseButtonIfNeeded(this)
