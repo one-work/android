@@ -42,6 +42,7 @@ class OverflowMenuComponent(
 
     toolbar.menu.removeItem(MENU_ITEM_ID)
     val item = toolbar.menu.add(Menu.NONE, MENU_ITEM_ID, Menu.NONE, data.label)
+    item.setIcon(android.R.drawable.ic_menu_share)
     item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
 
     toolbar.setOnMenuItemClickListener {
