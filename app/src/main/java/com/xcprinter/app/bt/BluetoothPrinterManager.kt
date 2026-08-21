@@ -56,6 +56,16 @@ object BluetoothPrinterManager {
   private lateinit var appContext: Context
   private val handler = Handler(Looper.getMainLooper())
 
+  /**
+   * 统一在主线程派发对外回调。
+   * BLE 系统回调（ScanCallback / BluetoothGattCallback）在 binder 线程触发，
+   * 而回调消费方（Bridge 组件 replyTo -> WebView.evaluateJavascript）必须在主线程执行，
+   * 否则抛 WebViewMethodCalledOnWrongThreadViolation。
+   */
+  private fun dispatchOnMain(block: () -> Unit) {
+    if (Looper.myLooper() == Looper.getMainLooper()) block() else handler.post(block)
+  }
+
   private val bluetoothAdapter: BluetoothAdapter? by lazy {
     appContext.getSystemService(BluetoothManager::class.java)?.adapter
   }
@@ -87,7 +97,7 @@ object BluetoothPrinterManager {
         when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
           BluetoothAdapter.STATE_ON -> {
             Log.d(TAG, "蓝牙已开启")
-            onReady?.invoke(true)
+            dispatchOnMain { onReady?.invoke(true) }
           }
           BluetoothAdapter.STATE_OFF -> Log.d(TAG, "蓝牙已关闭")
         }
@@ -104,7 +114,7 @@ object BluetoothPrinterManager {
   fun refreshReadyState() {
     // API 31+ 调用 isEnabled 需要 BLUETOOTH_CONNECT 权限，否则抛 SecurityException
     if (hasBluetoothPermissions() && bluetoothAdapter?.isEnabled == true) {
-      onReady?.invoke(true)
+      dispatchOnMain { onReady?.invoke(true) }
     }
   }
   
@@ -149,7 +159,8 @@ object BluetoothPrinterManager {
       val name = runCatching { device.name }.getOrNull() ?: return
       if (discoveredDevices.none { it.address == device.address }) {
         discoveredDevices.add(device)
-        onDeviceFound?.invoke(DeviceInfo(name = name, address = device.address))
+        val info = DeviceInfo(name = name, address = device.address)
+        dispatchOnMain { onDeviceFound?.invoke(info) }
       }
     }
   }
@@ -158,7 +169,7 @@ object BluetoothPrinterManager {
   fun connect(address: String) {
     val adapter = bluetoothAdapter
     if (adapter == null || !hasBluetoothPermissions()) {
-      onConnected?.invoke(false)
+      dispatchOnMain { onConnected?.invoke(false) }
       return
     }
 
@@ -166,7 +177,7 @@ object BluetoothPrinterManager {
       ?: runCatching { adapter.getRemoteDevice(address) }.getOrNull()
 
     if (device == null) {
-      onConnected?.invoke(false)
+      dispatchOnMain { onConnected?.invoke(false) }
       return
     }
 
@@ -179,7 +190,7 @@ object BluetoothPrinterManager {
   // Disconnect
   fun disconnect(address: String) {
     val current = gatt ?: run {
-      onDisconnected?.invoke(true)
+      dispatchOnMain { onDisconnected?.invoke(true) }
       return
     }
     connectionState = "disconnecting"
@@ -192,7 +203,7 @@ object BluetoothPrinterManager {
     val currentGatt = gatt
     val characteristic = targetCharacteristic
     if (currentGatt == null || characteristic == null || connectionState != "connected") {
-      onDataSent?.invoke(SendResultData(success = false, error = "未连接设备"))
+      dispatchOnMain { onDataSent?.invoke(SendResultData(success = false, error = "未连接设备")) }
       return
     }
     
@@ -212,7 +223,7 @@ object BluetoothPrinterManager {
     }
     
     if (!initiated) {
-      onDataSent?.invoke(SendResultData(success = false, error = "写入失败"))
+      dispatchOnMain { onDataSent?.invoke(SendResultData(success = false, error = "写入失败")) }
     }
   }
   
@@ -224,7 +235,7 @@ object BluetoothPrinterManager {
           connectInProgress = false
           connectionState = "connected"
           g.discoverServices()
-          onConnected?.invoke(true)
+          dispatchOnMain { onConnected?.invoke(true) }
         }
         BluetoothProfile.STATE_DISCONNECTED -> {
           val wasConnecting = connectInProgress
@@ -234,10 +245,10 @@ object BluetoothPrinterManager {
           closeGatt()
           if (wasConnecting) {
             // 对照 iOS didFailToConnect
-            onConnected?.invoke(false)
+            dispatchOnMain { onConnected?.invoke(false) }
           } else {
             // 对照 iOS didDisconnectPeripheral
-            onDisconnected?.invoke(true)
+            dispatchOnMain { onDisconnected?.invoke(true) }
           }
         }
       }
@@ -267,9 +278,9 @@ object BluetoothPrinterManager {
     
     private fun handleWriteResult(status: Int) {
       if (status == BluetoothGatt.GATT_SUCCESS) {
-        onDataSent?.invoke(SendResultData(success = true, error = null))
+        dispatchOnMain { onDataSent?.invoke(SendResultData(success = true, error = null)) }
       } else {
-        onDataSent?.invoke(SendResultData(success = false, error = "写入失败，状态码: $status"))
+        dispatchOnMain { onDataSent?.invoke(SendResultData(success = false, error = "写入失败，状态码: $status")) }
       }
     }
   }

@@ -21,29 +21,29 @@ class OverflowMenuComponent(
   name: String,
   private val delegate: BridgeDelegate<HotwireDestination>
 ) : BridgeComponent<HotwireDestination>(name, delegate) {
-  
+
   private var formUrl: String? = null
-  
+
   override fun onReceive(message: Message) {
     when (message.event) {
       "connect" -> handleConnectEvent(message)
       else -> Log.w(TAG, "Unknown event for message: $message")
     }
   }
-  
+
   private fun handleConnectEvent(message: Message) {
     val data = message.data<MessageData>() ?: return
     data.url?.let { formUrl = it }
     showOverflowMenuItem(data)
   }
-  
+
   private fun showOverflowMenuItem(data: MessageData) {
     val toolbar = delegate.destination.toolbarForNavigation() ?: return
-    
+
     toolbar.menu.removeItem(MENU_ITEM_ID)
     val item = toolbar.menu.add(Menu.NONE, MENU_ITEM_ID, Menu.NONE, data.label)
     item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-    
+
     toolbar.setOnMenuItemClickListener {
       if (it.itemId == MENU_ITEM_ID) {
         performClick()
