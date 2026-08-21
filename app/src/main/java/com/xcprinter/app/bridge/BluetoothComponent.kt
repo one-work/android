@@ -108,9 +108,14 @@ class BluetoothComponent(
 
   private fun handleConnect() {
     val address = prefs.getString("address", null)
+    val name = prefs.getString("name", null)
     Log.d(TAG, "connect address: $address")
 
-    if (address != null) BluetoothPrinterManager.connectionState
+    if (address != null) {
+      val state = BluetoothPrinterManager.connectionState
+      val xx = ConnectStatus(address = address, name = name, state = state)
+      replyTo("connect", xx)
+    }
   }
 
   private fun handleConnectDevice(message: Message) {
