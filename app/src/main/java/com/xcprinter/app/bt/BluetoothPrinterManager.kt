@@ -88,9 +88,8 @@ object BluetoothPrinterManager {
     appContext = context.applicationContext
     registerStateReceiver()
   }
-  
-  // Ready（对照 iOS centralManagerDidUpdateState）
 
+  // Ready（对照 iOS centralManagerDidUpdateState）
   private fun registerStateReceiver() {
     if (stateReceiver != null) return
 
@@ -109,7 +108,7 @@ object BluetoothPrinterManager {
     appContext.registerReceiver(receiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
     stateReceiver = receiver
   }
-  
+
   /**
    * 组件设置好 onReady 回调后调用：若蓝牙已开启立即回调 true
    * （对照 iOS CBCentralManager 初始化时立即触发 didUpdateState）。
