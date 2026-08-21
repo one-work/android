@@ -88,17 +88,11 @@ class BluetoothComponent(
     launcher.launch(BluetoothPrinterManager.requiredPermissions())
   }
 
-  // 对照 iOS setupBluetoothManager：先设置好各回调
+  // setupBluetoothManager：先设置好各回调
   private fun setupBluetoothManager() {
     BluetoothPrinterManager.onReady = { ready ->
-      replyTo(
-        "connect",
-        ConnectStatus(
-          address = prefs.getString("address", null),
-          name = prefs.getString("name", null),
-          ready = ready
-        )
-      )
+      val xx = ConnectStatus(address = prefs.getString("address", null), name = prefs.getString("name", null), ready = ready)
+      replyTo("connect", xx)
     }
     BluetoothPrinterManager.onDeviceFound = { device ->
       replyTo("search", SearchResult(device = device))
@@ -116,16 +110,13 @@ class BluetoothComponent(
     // 蓝牙已开启时立即回调 onReady（对照 iOS CBCentralManager 初始化行为）
     BluetoothPrinterManager.refreshReadyState()
   }
-  
+
   private fun handleConnect() {
     val address = prefs.getString("address", null)
     val name = prefs.getString("name", null)
     Log.d(TAG, "connect address: $address")
-    
-    // 有保存的 address 时填实际状态字符串，否则默认 disconnected
-    val state = if (address != null) BluetoothPrinterManager.connectionState else "disconnected"
-    
-    replyTo("connect", ConnectStatus(address = address, name = name, state = state))
+
+    if (address != null) BluetoothPrinterManager.connectionState
   }
 
   private fun handleConnectDevice(message: Message) {
