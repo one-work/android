@@ -45,6 +45,8 @@ data class SendResultData(
 object BluetoothPrinterManager {
   private const val TAG = "BluetoothPrinterManager"
   private const val SCAN_DURATION_MS = 5_000L
+  /** 应用层连接超时兜底（autoConnect=true 时系统不会自行超时） */
+  private const val CONNECT_TIMEOUT_MS = 30_000L
 
   // Callbacks
   var onReady: ((Boolean) -> Unit)? = null
@@ -124,6 +126,16 @@ object BluetoothPrinterManager {
   @Volatile
   private var isScanning = false
   private val stopScanRunnable = Runnable { stopScan() }
+
+  /** 连接超时：取消挂起的连接并上报失败 */
+  private val connectTimeoutRunnable = Runnable {
+    if (!connectInProgress) return@Runnable
+    Log.w(TAG, "连接超时（${CONNECT_TIMEOUT_MS}ms），取消连接")
+    connectInProgress = false
+    connectionState = "disconnected"
+    closeGatt()
+    dispatchOnMain { onConnected?.invoke(false) }
+  }
   
   fun startScan() {
     val scanner = bluetoothAdapter?.bluetoothLeScanner
@@ -174,18 +186,27 @@ object BluetoothPrinterManager {
       return
     }
 
-    val device = discoveredDevices.firstOrNull { it.address == address }
-      ?: runCatching { adapter.getRemoteDevice(address) }.getOrNull()
+    val scannedDevice = discoveredDevices.firstOrNull { it.address == address }
+    val device = scannedDevice ?: runCatching { adapter.getRemoteDevice(address) }.getOrNull()
 
     if (device == null) {
       dispatchOnMain { onConnected?.invoke(false) }
       return
     }
 
+    // 扫描与连接并发会显著降低建链成功率，连接前先停止扫描
+    stopScan()
     closeGatt()
     connectInProgress = true
     connectionState = "connecting"
-    gatt = device.connectGatt(appContext, false, gattCallback)
+    // 显式指定 TRANSPORT_LE（默认 TRANSPORT_AUTO 对纯 BLE 设备在部分机型上建链容易失败）。
+    // 本次扫描到的设备用直连（autoConnect=false，约 20~30 秒内快速反馈）；
+    // 仅凭历史 MAC 重连的设备用 autoConnect=true，等待设备下次广播再建链，由应用层超时兜底。
+    val autoConnect = scannedDevice == null
+    Log.d(TAG, "连接设备 $address（autoConnect=$autoConnect, transport=LE）")
+    gatt = device.connectGatt(appContext, autoConnect, gattCallback, BluetoothDevice.TRANSPORT_LE)
+    handler.removeCallbacks(connectTimeoutRunnable)
+    handler.postDelayed(connectTimeoutRunnable, CONNECT_TIMEOUT_MS)
   }
 
   // Disconnect
@@ -231,6 +252,8 @@ object BluetoothPrinterManager {
   // GATT 回调
   private val gattCallback = object : BluetoothGattCallback() {
     override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
+      Log.d(TAG, "onConnectionStateChange: status=$status, newState=$newState")
+      handler.removeCallbacks(connectTimeoutRunnable)
       when (newState) {
         BluetoothProfile.STATE_CONNECTED -> {
           connectInProgress = false
@@ -240,16 +263,18 @@ object BluetoothPrinterManager {
         }
         BluetoothProfile.STATE_DISCONNECTED -> {
           val wasConnecting = connectInProgress
+          val previousState = connectionState
           connectInProgress = false
           connectionState = "disconnected"
           targetCharacteristic = null
           closeGatt()
-          if (wasConnecting) {
+          when {
             // 对照 iOS didFailToConnect
-            dispatchOnMain { onConnected?.invoke(false) }
-          } else {
+            wasConnecting -> dispatchOnMain { onConnected?.invoke(false) }
+            // 连接前 closeGatt 或超时取消触发的收尾回调，忽略避免误报断开
+            previousState == "disconnected" -> Unit
             // 对照 iOS didDisconnectPeripheral
-            dispatchOnMain { onDisconnected?.invoke(true) }
+            else -> dispatchOnMain { onDisconnected?.invoke(true) }
           }
         }
       }
