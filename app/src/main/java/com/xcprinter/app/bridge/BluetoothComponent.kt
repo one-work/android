@@ -15,11 +15,7 @@ import com.xcprinter.app.bt.DeviceInfo
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/**
- * 蓝牙打印组件（对照 iOS Bridge/BluetoothComponent.swift）。
- * 事件与 JSON 契约与 iOS 完全一致：
- * connect / search / connect_device / disconnect_device / send_data
- */
+// 蓝牙打印组件
 class BluetoothComponent(
   name: String,
   private val delegate: BridgeDelegate<HotwireDestination>
@@ -29,9 +25,8 @@ class BluetoothComponent(
     get() = delegate.destination.fragment
 
   private val prefs: SharedPreferences
-    get() = fragment.requireContext()
-      .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-  
+    get() = fragment.requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
   // manager 回调设置 + 首次 ready 回调只做一次（对照 iOS CBCentralManager
   // 初始化时 didUpdateState 只触发一次）。否则每条 JS 消息都会重复触发
   // refreshReadyState -> replyTo("connect", ready=true)，与 JS 形成死循环。
@@ -106,14 +101,13 @@ class BluetoothComponent(
     BluetoothPrinterManager.onDataSent = { result ->
       replyTo("send_data", SendResult(success = result.success, error = result.error))
     }
-    
+
     // 蓝牙已开启时立即回调 onReady（对照 iOS CBCentralManager 初始化行为）
     BluetoothPrinterManager.refreshReadyState()
   }
 
   private fun handleConnect() {
     val address = prefs.getString("address", null)
-    val name = prefs.getString("name", null)
     Log.d(TAG, "connect address: $address")
 
     if (address != null) BluetoothPrinterManager.connectionState
@@ -121,61 +115,55 @@ class BluetoothComponent(
 
   private fun handleConnectDevice(message: Message) {
     val data = message.data<ConnectDeviceData>() ?: return
-    prefs.edit()
-      .putString("address", data.address)
-      .putString("name", data.name)
-      .apply()
+    prefs.edit().putString("address", data.address).putString("name", data.name).apply()
     BluetoothPrinterManager.connect(data.address)
   }
 
   private fun handleDisconnectDevice(message: Message) {
     val data = message.data<DisconnectDeviceData>() ?: return
-    prefs.edit()
-      .remove("address")
-      .remove("name")
-      .apply()
+    prefs.edit().remove("address").remove("name").apply()
     BluetoothPrinterManager.disconnect(data.address)
   }
-  
+
   private fun handleSendData(message: Message) {
     val data = message.data<SendData>() ?: return
     BluetoothPrinterManager.send(data.data.map { it.toByte() }.toByteArray())
   }
-  
-  // MARK: - 接收数据模型
+
+  // 接收数据模型
   @Serializable
   private data class ConnectDeviceData(
     @SerialName("address") val address: String,
     @SerialName("name") val name: String
   )
-  
+
   @Serializable
   private data class DisconnectDeviceData(
     @SerialName("address") val address: String
   )
-  
+
   @Serializable
   private data class SendData(
     @SerialName("data") val data: List<Int>
   )
-  
-  // MARK: - 发送数据模型
+
+  // 发送数据模型
   @Serializable
   private data class SearchResult(
     @SerialName("device") val device: DeviceInfo
   )
-  
+
   @Serializable
   private data class ConnectResult(
     @SerialName("success") val success: Boolean
   )
-  
+
   @Serializable
   private data class SendResult(
     @SerialName("success") val success: Boolean,
     @SerialName("error") val error: String?
   )
-  
+
   @Serializable
   private data class ConnectStatus(
     @SerialName("address") val address: String?,
@@ -183,7 +171,7 @@ class BluetoothComponent(
     @SerialName("state") val state: String = "",
     @SerialName("ready") val ready: Boolean = false
   )
-  
+
   private companion object {
     const val TAG = "BluetoothComponent"
     const val PREFS_NAME = "bluetooth"

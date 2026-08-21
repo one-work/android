@@ -27,7 +27,7 @@ class RightButtonComponent(
   
   private fun addButton(data: MessageData) {
     val toolbar = delegate.destination.toolbarForNavigation() ?: return
-    
+
     // 幂等：先移除旧按钮再添加
     toolbar.menu.removeItem(MENU_ITEM_ID)
     val item = toolbar.menu.add(Menu.NONE, MENU_ITEM_ID, Menu.NONE, data.title)
