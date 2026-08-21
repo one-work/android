@@ -77,11 +77,11 @@ object BluetoothPrinterManager {
   private var gatt: BluetoothGatt? = null
   private var targetCharacteristic: BluetoothGattCharacteristic? = null
   private var connectInProgress = false
-  
+
   /** 当前连接状态字符串（connect 事件用） */
   var connectionState: String = "disconnected"
     private set
-  
+
   private var stateReceiver: BroadcastReceiver? = null
 
   fun initialize(context: Context) {
@@ -120,9 +120,8 @@ object BluetoothPrinterManager {
       dispatchOnMain { onReady?.invoke(true) }
     }
   }
-  
-  // Scan
 
+  // Scan
   @Volatile
   private var isScanning = false
   private val stopScanRunnable = Runnable { stopScan() }
@@ -136,17 +135,17 @@ object BluetoothPrinterManager {
     closeGatt()
     dispatchOnMain { onConnected?.invoke(false) }
   }
-  
+
   fun startScan() {
     val scanner = bluetoothAdapter?.bluetoothLeScanner
     if (scanner == null || !hasBluetoothPermissions()) {
       Log.w(TAG, "无法扫描：蓝牙不可用或缺少权限")
       return
     }
-    
+
     discoveredDevices.clear()
     stopScan()
-    
+
     try {
       scanner.startScan(scanCallback)
       isScanning = true
@@ -177,7 +176,7 @@ object BluetoothPrinterManager {
       }
     }
   }
-  
+
   // Connect
   fun connect(address: String) {
     val adapter = bluetoothAdapter
@@ -218,9 +217,8 @@ object BluetoothPrinterManager {
     connectionState = "disconnecting"
     current.disconnect()
   }
-  
-  // MARK: - Send Data（对照 iOS send）
-  
+
+  // Send Data
   fun send(bytes: ByteArray) {
     val currentGatt = gatt
     val characteristic = targetCharacteristic
@@ -228,7 +226,7 @@ object BluetoothPrinterManager {
       dispatchOnMain { onDataSent?.invoke(SendResultData(success = false, error = "未连接设备")) }
       return
     }
-    
+
     val initiated = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       currentGatt.writeCharacteristic(
         characteristic,
@@ -243,12 +241,12 @@ object BluetoothPrinterManager {
       @Suppress("DEPRECATION")
       currentGatt.writeCharacteristic(characteristic)
     }
-    
+
     if (!initiated) {
       dispatchOnMain { onDataSent?.invoke(SendResultData(success = false, error = "写入失败")) }
     }
   }
-  
+
   // GATT 回调
   private val gattCallback = object : BluetoothGattCallback() {
     override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
@@ -279,7 +277,7 @@ object BluetoothPrinterManager {
         }
       }
     }
-    
+
     override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
       // 取所有 service 中第一个带 WRITE 属性的 characteristic（对照 iOS didDiscoverCharacteristicsFor）
       targetCharacteristic = g.services
@@ -291,7 +289,7 @@ object BluetoothPrinterManager {
         Log.w(TAG, "未找到可写 characteristic")
       }
     }
-    
+
     // 注意：SDK 的 BluetoothGattCallback 没有带 value 的 onCharacteristicWrite
     // 重载（只有 onCharacteristicRead 有），写入结果统一走这个回调。
     override fun onCharacteristicWrite(
@@ -301,7 +299,7 @@ object BluetoothPrinterManager {
     ) {
       handleWriteResult(status)
     }
-    
+
     private fun handleWriteResult(status: Int) {
       if (status == BluetoothGatt.GATT_SUCCESS) {
         dispatchOnMain { onDataSent?.invoke(SendResultData(success = true, error = null)) }
@@ -310,14 +308,13 @@ object BluetoothPrinterManager {
       }
     }
   }
-  
+
   private fun closeGatt() {
     runCatching { gatt?.close() }
     gatt = null
   }
-  
-  // MARK: - 权限检查
-  
+
+  // 权限检查
   /** 按系统版本返回所需的蓝牙运行时权限 */
   fun requiredPermissions(): Array<String> =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
