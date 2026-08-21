@@ -3,6 +3,7 @@ package com.xcprinter.app.bridge
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
+import com.xcprinter.app.R
 import dev.hotwire.core.bridge.BridgeComponent
 import dev.hotwire.core.bridge.BridgeDelegate
 import dev.hotwire.core.bridge.Message
@@ -42,7 +43,7 @@ class OverflowMenuComponent(
 
     toolbar.menu.removeItem(MENU_ITEM_ID)
     val item = toolbar.menu.add(Menu.NONE, MENU_ITEM_ID, Menu.NONE, data.label)
-    item.setIcon(android.R.drawable.ic_menu_share)
+    item.setIcon(R.drawable.outline_bluetooth_24)
     item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
 
     toolbar.setOnMenuItemClickListener {
