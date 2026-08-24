@@ -222,6 +222,7 @@ object BluetoothPrinterManager {
   fun send(bytes: ByteArray) {
     val currentGatt = gatt
     val characteristic = targetCharacteristic
+    Log.d(TAG, "打印用的service: ${characteristic?.service?.uuid}")
     if (currentGatt == null || characteristic == null || connectionState != "connected") {
       dispatchOnMain { onDataSent?.invoke(SendResultData(success = false, error = "未连接设备")) }
       return
@@ -235,7 +236,7 @@ object BluetoothPrinterManager {
       ) == BluetoothStatusCodes.SUCCESS
     } else {
       @Suppress("DEPRECATION")
-      characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+      characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
       @Suppress("DEPRECATION")
       characteristic.value = bytes
       @Suppress("DEPRECATION")
@@ -286,7 +287,7 @@ object BluetoothPrinterManager {
           Log.d(TAG, "发现 characteristic: uuid=${c.uuid}, service=${c.service.uuid}, properties=${c.propertiesToString()}")
         }
       }
-      targetCharacteristic = chars.firstOrNull { it.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0 }
+      targetCharacteristic = chars.firstOrNull { (it.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0) && it.service.uuid.toString().startsWith("0000FF00", true) }
       if (targetCharacteristic == null) {
         Log.w(TAG, "未找到可写 characteristic")
       }
