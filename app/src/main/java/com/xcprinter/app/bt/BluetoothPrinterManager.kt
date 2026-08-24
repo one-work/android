@@ -22,6 +22,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.xcprinter.app.BuildConfig
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -230,7 +231,7 @@ object BluetoothPrinterManager {
       currentGatt.writeCharacteristic(
         characteristic,
         bytes,
-        BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
       ) == BluetoothStatusCodes.SUCCESS
     } else {
       @Suppress("DEPRECATION")
@@ -278,12 +279,14 @@ object BluetoothPrinterManager {
     }
 
     override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
-      // 取所有 service 中第一个带 WRITE 属性的 characteristic（对照 iOS didDiscoverCharacteristicsFor）
-      targetCharacteristic = g.services
-        .flatMap { it.characteristics }
-        .firstOrNull {
-          it.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
+      // 取所有 service 中第一个带 WRITE 属性的 characteristic
+      val chars = g.services.flatMap { it.characteristics }
+      if (BuildConfig.DEBUG) {
+        chars.forEach { c ->
+          Log.d(TAG, "发现 characteristic: uuid=${c.uuid}, service=${c.service.uuid}, properties=${c.propertiesToString()}")
         }
+      }
+      targetCharacteristic = chars.firstOrNull { it.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0 }
       if (targetCharacteristic == null) {
         Log.w(TAG, "未找到可写 characteristic")
       }
@@ -311,6 +314,16 @@ object BluetoothPrinterManager {
   private fun closeGatt() {
     runCatching { gatt?.close() }
     gatt = null
+  }
+
+  /** 将 characteristic 的 properties 位掩码解码为可读字符串（调试用） */
+  private fun BluetoothGattCharacteristic.propertiesToString(): String {
+    val flags = mutableListOf<String>()
+    if (properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0) flags += "WRITE"
+    if (properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0) flags += "WRITE_NO_RESPONSE"
+    if (properties and BluetoothGattCharacteristic.PROPERTY_READ != 0) flags += "READ"
+    if (properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) flags += "NOTIFY"
+    return flags.joinToString("|")
   }
 
   // 权限检查
