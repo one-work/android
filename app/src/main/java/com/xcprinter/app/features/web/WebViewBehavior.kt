@@ -58,7 +58,6 @@ internal object WebViewBehavior {
   // Android 没有 WKUserScript，等价做法是在冷启动页面加载完成后注入。
   // 脚本自带防重复 guard（检测元素 id），重复注入安全。
   // ------------------------------------------------------------------
-  
   private var cachedScripts: String? = null
 
   fun injectScripts(context: Context, webView: HotwireWebView) {
@@ -107,7 +106,6 @@ internal object WebViewBehavior {
   // 离开刷新（对照 iOS viewDidDisappear 中的 session.reload()）：
   // /bluetooth/menus 页面消失后，刷新回到的下层页面。
   // ------------------------------------------------------------------
-  
   fun refreshUnderlyingDestinationOnLeave(destination: HotwireDestination) {
     if (!isBluetoothMenusPage(destination.location)) return
     
@@ -123,7 +121,6 @@ internal object WebViewBehavior {
   // 401 处理（对照 iOS SceneController 的 promptForAuthentication）
   // 返回 true 表示已处理（跳转登录页），false 表示交给默认错误页。
   // ------------------------------------------------------------------
-  
   fun handleVisitError(destination: HotwireDestination, error: VisitError): Boolean {
     val statusCode = (error as? HttpError)?.statusCode
     if (statusCode != 401) return false

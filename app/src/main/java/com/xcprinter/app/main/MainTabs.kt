@@ -25,8 +25,6 @@ private val help = HotwireBottomTab(
   )
 )
 
-/**
- * 底部 Tab（对照 iOS Lib/Tabs.swift）。
- */
+// 底部 Tab
 val mainTabs: List<HotwireBottomTab>
   get() = listOf(home, help)

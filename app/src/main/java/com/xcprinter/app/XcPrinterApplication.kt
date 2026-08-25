@@ -30,7 +30,7 @@ class XcPrinterApplication : Application() {
   }
 
   private fun configureHotwire() {
-    // Path configuration：本地 asset + 远程双来源（对照 iOS AppDelegate）
+    // Path configuration：本地 asset + 远程双来源
     Hotwire.loadPathConfiguration(
       context = this,
       location = PathConfiguration.Location(
@@ -67,7 +67,6 @@ class XcPrinterApplication : Application() {
       AppNavigationRouteDecisionHandler()
     )
 
-    // 配置项（对照 iOS AppDelegate）
     Hotwire.config.applicationUserAgentPrefix = "Hotwire"
     Hotwire.config.webViewDebuggingEnabled = true
     Hotwire.config.jsonConverter = KotlinXJsonConverter()

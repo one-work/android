@@ -18,7 +18,7 @@ class MainActivity : HotwireActivity() {
 
   private val permissionLauncher =
     registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
-  
+
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
@@ -42,7 +42,7 @@ class MainActivity : HotwireActivity() {
   }
 
   override fun navigatorConfigurations() = mainTabs.navigatorConfigurations
-  
+
   /**
    * 蓝牙运行时权限在 App 启动时统一请求一次，组件内只做检查。
    * API 31+：BLUETOOTH_SCAN + BLUETOOTH_CONNECT；更低版本：ACCESS_FINE_LOCATION。
@@ -56,7 +56,7 @@ class MainActivity : HotwireActivity() {
     } else {
       arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
     }
-    
+
     val missing = permissions.filter {
       checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
     }
