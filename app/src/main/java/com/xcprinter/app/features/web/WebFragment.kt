@@ -33,8 +33,7 @@ open class WebFragment : HotwireWebFragment() {
 
   override fun onColdBootPageCompleted(location: String) {
     super.onColdBootPageCompleted(location)
-    val context = context ?: return
-    WebViewBehavior.injectScripts(context, navigator.session.webView)
+    WebViewBehavior.injectScripts(navigator.session.webView)
   }
 
   override fun onVisitErrorReceived(location: String, error: VisitError) {

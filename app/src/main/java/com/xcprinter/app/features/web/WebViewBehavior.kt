@@ -1,16 +1,18 @@
 package com.xcprinter.app.features.web
 
-import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.view.Menu
 import android.view.MenuItem
 import androidx.core.net.toUri
 import com.xcprinter.app.R
+import dev.hotwire.core.config.Hotwire
 import dev.hotwire.core.turbo.errors.HttpError
 import dev.hotwire.core.turbo.errors.VisitError
 import dev.hotwire.core.turbo.webview.HotwireWebView
 import dev.hotwire.navigation.destinations.HotwireDestination
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * WebFragment / WebBottomSheetFragment 共享的行为
@@ -54,37 +56,79 @@ internal object WebViewBehavior {
   }
 
   // ------------------------------------------------------------------
-  // JS 注入（对照 iOS 的 WKUserScript，atDocumentEnd）
-  // Android 没有 WKUserScript，等价做法是在冷启动页面加载完成后注入。
+  // JS 注入（对照 iOS AppDelegate 的 InjectedScriptsProvider + WKUserScript）
+  // 注入的外部 JS 文件通过 path configuration 的 settings.script_injections
+  // 配置下发（远程 configurations/android_v1.json），格式为 [{id, url}]；
+  // 无配置、解析失败或解析结果为空时使用内置 fallback。
+  // Android 没有 WKUserScript，等价做法是在冷启动页面加载完成后注入；
   // 脚本自带防重复 guard（检测元素 id），重复注入安全。
   // ------------------------------------------------------------------
-  private var cachedScripts: String? = null
+  private data class InjectedScript(val id: String, val url: String)
 
-  fun injectScripts(context: Context, webView: HotwireWebView) {
-    val js = cachedScripts ?: readScripts(context).also { cachedScripts = it }
-    if (js.isNotBlank()) {
-      webView.evaluateJavascript(js, null)
+  private val fallbackScripts = listOf(
+    InjectedScript(
+      id = "init_turbo",
+      url = "https://assets.linlishenghuo.com/assets/turbo-00000001.digested.js"
+    ),
+    InjectedScript(
+      id = "init",
+      url = "https://assets.linlishenghuo.com/assets/printer-00000097.digested.js"
+    )
+  )
+
+  fun injectScripts(webView: HotwireWebView) {
+    val payload = JSONArray().apply {
+      currentScripts().forEach { script ->
+        put(JSONObject().apply {
+          put("id", script.id)
+          put("url", script.url)
+        })
+      }
     }
+
+    // async = false 保证多个脚本按顺序执行
+    val js = """
+      (() => {
+          const scripts = $payload;
+          for (const item of scripts) {
+              if (document.getElementById(item.id)) continue;
+
+              const script = document.createElement('script');
+              script.id = item.id;
+              script.src = item.url;
+              script.async = false;
+              script.onerror = () => {
+                  console.error(`注入 ${'$'}{item.id} 失败：${'$'}{item.url}`);
+              };
+
+              document.head.appendChild(script);
+              console.debug(`注入 ${'$'}{item.id} 成功：${'$'}{item.url}`);
+          }
+      })();
+    """.trimIndent()
+
+    webView.evaluateJavascript(js, null)
   }
 
-  private fun readScripts(context: Context): String {
-    return listOf("js/init_turbo.js", "js/init.js")
-      .mapNotNull { path ->
-        runCatching {
-          context.assets.open(path).bufferedReader().use { it.readText() }
-        }.getOrNull()
-      }
-      // 必须以分号分隔：各文件是无分号结尾的 IIFE，直接用 "\n" 拼接时
-      // JS 不会自动断句（ASI），后一个文件的 "(" 会被解析成对前一个
-      // IIFE 返回值的调用，抛 TypeError 导致后续脚本全部不执行。
-      .joinToString(";\n")
+  private fun currentScripts(): List<InjectedScript> {
+    val settings = Hotwire.config.pathConfiguration.settings
+    val items = settings["script_injections"] as? List<*> ?: return fallbackScripts
+
+    val scripts = items.mapNotNull { item ->
+      val map = item as? Map<*, *> ?: return@mapNotNull null
+      val id = map["id"] as? String ?: return@mapNotNull null
+      val url = map["url"] as? String ?: return@mapNotNull null
+      if (url.toUri().scheme == null) return@mapNotNull null
+      InjectedScript(id, url)
+    }
+
+    return scripts.ifEmpty { fallbackScripts }
   }
 
   // ------------------------------------------------------------------
   // 模态关闭按钮（对照 iOS addModalCloseButtonIfNeeded）：
   // 表单页（/bluetooth/menus）右上角放「关闭」(X)，点击返回。
   // ------------------------------------------------------------------
-
   fun addModalCloseButtonIfNeeded(destination: HotwireDestination) {
     if (!isBluetoothMenusPage(destination.location)) return
     
@@ -116,7 +160,7 @@ internal object WebViewBehavior {
       }
     }
   }
-  
+
   // ------------------------------------------------------------------
   // 401 处理（对照 iOS SceneController 的 promptForAuthentication）
   // 返回 true 表示已处理（跳转登录页），false 表示交给默认错误页。
