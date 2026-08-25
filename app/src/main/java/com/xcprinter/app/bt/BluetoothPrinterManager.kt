@@ -228,15 +228,17 @@ object BluetoothPrinterManager {
       return
     }
 
+    // 使用带响应写入（WRITE_TYPE_DEFAULT）：ATT 层逐包 ACK + 协议栈串行化，
+    // JS 连续下发多包时由打印机固件做流控，不会像 NO_RESPONSE 那样因控制器队列溢出静默丢包。
     val initiated = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       currentGatt.writeCharacteristic(
         characteristic,
         bytes,
-        BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
       ) == BluetoothStatusCodes.SUCCESS
     } else {
       @Suppress("DEPRECATION")
-      characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+      characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
       @Suppress("DEPRECATION")
       characteristic.value = bytes
       @Suppress("DEPRECATION")
@@ -287,7 +289,8 @@ object BluetoothPrinterManager {
           Log.d(TAG, "发现 characteristic: uuid=${c.uuid}, service=${c.service.uuid}, properties=${c.propertiesToString()}")
         }
       }
-      targetCharacteristic = chars.firstOrNull { (it.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0) && it.service.uuid.toString().startsWith("0000FF00", true) }
+      // 取所有 service 中第一个带 WRITE 属性的 characteristic（对照 iOS didDiscoverCharacteristicsFor）
+      targetCharacteristic = chars.firstOrNull { (it.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0) && it.service.uuid.toString().startsWith("0000FF00", true) }
       if (targetCharacteristic == null) {
         Log.w(TAG, "未找到可写 characteristic")
       }
