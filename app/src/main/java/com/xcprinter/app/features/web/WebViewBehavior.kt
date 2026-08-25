@@ -152,7 +152,7 @@ internal object WebViewBehavior {
   // ------------------------------------------------------------------
   fun refreshUnderlyingDestinationOnLeave(destination: HotwireDestination) {
     if (!isBluetoothMenusPage(destination.location)) return
-    
+
     // 等待返回栈弹出完成后再刷新当前（下层）destination
     Handler(Looper.getMainLooper()).post {
       runCatching {
