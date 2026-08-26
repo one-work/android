@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
@@ -24,6 +25,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.xcprinter.app.BuildConfig
 import kotlinx.serialization.Serializable
+import java.util.UUID
 
 @Serializable
 data class DeviceInfo(
@@ -37,7 +39,14 @@ data class SendResultData(
 )
 
 /**
- * 蓝牙打印机管理器单例（对照 iOS Lib/BluetoothManager.swift）。
+ * 蓝牙打印机管理器单例
+ *
+ * 数据通道采用「MTU + Credits 双重流控」：
+ * - 下行：所有业务数据通过 FF02 以 WRITE_TYPE_NO_RESPONSE 写入，避免链路层逐包 ACK；
+ * - 上行：FF03 Notify 推送 MTU 协商结果（0x02 + 小端 16bit 包长）与 Credits 配额
+ *   （0x01 + 增量配额）；
+ * - 流控：credits 初始为 0，收到 Credits 通知前不下行业务数据；每写出一包 credits-1，
+ *   耗尽即挂起，下一帧 Credits 到达后恢复；任意时刻仅一包在途，保证按入队顺序到达。
  *
  * 注意：Android 的 BLE 设备地址使用 MAC（如 "AA:BB:CC:DD:EE:FF"），
  * iOS 使用 UUID，服务端需区分平台。
@@ -48,6 +57,22 @@ object BluetoothPrinterManager {
   private const val SCAN_DURATION_MS = 5_000L
   /** 应用层连接超时兜底（autoConnect=true 时系统不会自行超时） */
   private const val CONNECT_TIMEOUT_MS = 30_000L
+  /** 期望协商的链路层 MTU（对照 wx.setBLEMTU({mtu: 247})），有效载荷 = MTU - 3（ATT 头） */
+  private const val REQUEST_MTU = 247
+  /** 协商前的保守单包大小（默认 ATT MTU 23 - 3） */
+  private const val DEFAULT_PACKET_SIZE = 20
+  /** 启用 FF03 通知后等待首帧 Credits 的提示超时（仅日志提示，不阻断） */
+  private const val CREDITS_TIMEOUT_MS = 5_000L
+  // FF03 通知包类型标识（首字节）
+  private const val NOTIFY_TYPE_CREDITS: Byte = 0x01
+  private const val NOTIFY_TYPE_MTU: Byte = 0x02
+  // 打印机 GATT 服务/特征值（对照小程序服务清单）
+  private val SERVICE_UUID: UUID = UUID.fromString("0000FF00-0000-1000-8000-00805F9B34FB")
+  /** 下行数据通道（Write No Response） */
+  private val WRITE_CHAR_UUID: UUID = UUID.fromString("0000FF02-0000-1000-8000-00805F9B34FB")
+  /** 上行流控通知通道（Notify：MTU 协商结果 + Credits 配额） */
+  private val NOTIFY_CHAR_UUID: UUID = UUID.fromString("0000FF03-0000-1000-8000-00805F9B34FB")
+  private val CCC_DESCRIPTOR_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805F9B34FB")
 
   // Callbacks
   var onReady: ((Boolean) -> Unit)? = null
@@ -76,14 +101,42 @@ object BluetoothPrinterManager {
 
   private val discoveredDevices = mutableListOf<BluetoothDevice>()
   private var gatt: BluetoothGatt? = null
-  private var targetCharacteristic: BluetoothGattCharacteristic? = null
+  private var writeCharacteristic: BluetoothGattCharacteristic? = null
+  private var notifyCharacteristic: BluetoothGattCharacteristic? = null
   private var connectInProgress = false
 
   /** 当前连接状态字符串（connect 事件用） */
+  @Volatile
   var connectionState: String = "disconnected"
     private set
 
   private var stateReceiver: BroadcastReceiver? = null
+  // ---- 流控状态----
+
+  /** 流控状态锁：GATT 回调在 binder 线程，send 在桥接线程 */
+  private val flowLock = Any()
+  /** 单包最大字节：先由 MTU 协商临时设定，后以 FF03 MTU 通知为准 */
+  @Volatile
+  private var packetSize = DEFAULT_PACKET_SIZE
+  /** 当前可用发送配额：协议规定初始为 0，必须等待 FF03 Credits 通知 */
+  private var credits = 0
+  /** 是否已收到过至少一次 Credits 通知 */
+  private var creditsReceived = false
+  /** 是否已完成 MTU 协商（协商成功或收到 FF03 MTU 通知任一发生即置位） */
+  private var mtuNegotiated = false
+  /** 待发送分包队列（FIFO） */
+  private val sendQueue = ArrayDeque<ByteArray>()
+  /** 是否单次写入在途（严格串行互斥，防止并发乱序） */
+  private var isWriting = false
+  /** 每个 send() 调用对应一条记录，remaining 为尚未写出的包数，归零时回调成功 */
+  private class PendingSend(var remaining: Int)
+  private val pendingSends = ArrayDeque<PendingSend>()
+  /** 5 秒未收到 Credits 仅提示不阻断（兼容首帧延迟大的机型，对照 ble.js 5s 定时器） */
+  private val creditsTimeoutRunnable = Runnable {
+    if (!creditsReceived) {
+      Log.w(TAG, "启用 FF03 通知 ${CREDITS_TIMEOUT_MS}ms 后仍未收到 Credits，请检查打印机连接")
+    }
+  }
 
   fun initialize(context: Context) {
     appContext = context.applicationContext
@@ -196,6 +249,7 @@ object BluetoothPrinterManager {
     // 扫描与连接并发会显著降低建链成功率，连接前先停止扫描
     stopScan()
     closeGatt()
+    resetFlowControl()
     connectInProgress = true
     connectionState = "connecting"
     // 显式指定 TRANSPORT_LE（默认 TRANSPORT_AUTO 对纯 BLE 设备在部分机型上建链容易失败）。
@@ -219,35 +273,122 @@ object BluetoothPrinterManager {
   }
 
   // Send Data
+  /**
+   * 发送业务数据（对照小程序 ble.send）：按 packetSize 切片入队，由 Credits
+   * 流控驱动经 FF02 writeNoResponse 串行写出。数据先排队，收到打印机 Credits
+   * 后自动发出；onDataSent 在本次调用的全部数据写完后回调一次。
+   *
+   * 注意：运行期间若收到新的 FF03 MTU 通知，仅影响后续 send 调用的切片，
+   * 已入队的旧包不重新切分（与小程序行为一致）。
+   */
   fun send(bytes: ByteArray) {
-    val currentGatt = gatt
-    val characteristic = targetCharacteristic
-    Log.d(TAG, "打印用的service: ${characteristic?.service?.uuid}")
-    if (currentGatt == null || characteristic == null || connectionState != "connected") {
+    if (gatt == null || writeCharacteristic == null || connectionState != "connected") {
       dispatchOnMain { onDataSent?.invoke(SendResultData(success = false, error = "未连接设备")) }
       return
     }
+    if (bytes.isEmpty()) {
+      dispatchOnMain { onDataSent?.invoke(SendResultData(success = true, error = null)) }
+      return
+    }
 
-    // 使用带响应写入（WRITE_TYPE_DEFAULT）：ATT 层逐包 ACK + 协议栈串行化，
-    // JS 连续下发多包时由打印机固件做流控，不会像 NO_RESPONSE 那样因控制器队列溢出静默丢包。
-    val initiated = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      currentGatt.writeCharacteristic(
-        characteristic,
-        bytes,
-        BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-      ) == BluetoothStatusCodes.SUCCESS
+    val size = packetSize.coerceAtLeast(1)
+    synchronized(flowLock) {
+      var count = 0
+      var offset = 0
+      while (offset < bytes.size) {
+        val end = (offset + size).coerceAtMost(bytes.size)
+        sendQueue.addLast(bytes.copyOfRange(offset, end))
+        offset = end
+        count++
+      }
+      pendingSends.addLast(PendingSend(count))
+      Log.d(TAG, "入队 ${bytes.size} 字节（$count 包，packetSize=$size，credits=$credits）")
+    }
+    flushQueue()
+  }
+
+  /**
+   * 冲刷发送队列：
+   * credits<=0 时挂起，等待 FF03 Credits 通知恢复；任意时刻仅一包在途，
+   * 写完成回调驱动下一包，保证包按入队顺序到达打印机。
+   */
+  private fun flushQueue() {
+    val g: BluetoothGatt
+    val ch: BluetoothGattCharacteristic
+    val packet: ByteArray
+    synchronized(flowLock) {
+      if (isWriting) return
+      if (connectionState != "connected") return
+      g = gatt ?: return
+      ch = writeCharacteristic ?: return
+      if (sendQueue.isEmpty()) return
+      if (credits <= 0) {
+        Log.d(TAG, "credits 耗尽，挂起发送（队列剩余 ${sendQueue.size} 包）")
+        return
+      }
+      packet = sendQueue.first()
+      isWriting = true
+    }
+
+    if (!writeNoResponse(g, ch, packet)) {
+      Log.w(TAG, "写入发起失败")
+      failPendingSends("写入失败")
+    }
+  }
+
+  /**
+   * 以 WRITE_TYPE_NO_RESPONSE 写入 FF02（对照小程序 writeNoResponse）：
+   * 应用层流控已由 FF03 Credits 保证，无需链路层逐包 ACK，吞吐显著更高。
+   */
+  private fun writeNoResponse(
+    g: BluetoothGatt,
+    ch: BluetoothGattCharacteristic,
+    data: ByteArray
+  ): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      g.writeCharacteristic(ch, data, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) ==
+        BluetoothStatusCodes.SUCCESS
     } else {
       @Suppress("DEPRECATION")
-      characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+      ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
       @Suppress("DEPRECATION")
-      characteristic.value = bytes
+      ch.value = data
       @Suppress("DEPRECATION")
-      currentGatt.writeCharacteristic(characteristic)
+      g.writeCharacteristic(ch)
     }
 
-    if (!initiated) {
-      dispatchOnMain { onDataSent?.invoke(SendResultData(success = false, error = "写入失败")) }
+  /**
+   * 写入失败/断开时清空发送队列并向上层报错（每条 pending 记录回调一次）。
+   * 注：小程序文档为「包重入队首、resolve 交上层重试」；桥接层每条 send_data
+   * 消息需明确答复，故直接报错由 JS 决定重发。
+   */
+  private fun failPendingSends(error: String) {
+    val count: Int
+    synchronized(flowLock) {
+      sendQueue.clear()
+      isWriting = false
+      count = pendingSends.size
+      pendingSends.clear()
     }
+    if (count > 0) {
+      dispatchOnMain { repeat(count) { onDataSent?.invoke(SendResultData(success = false, error = error)) } }
+    }
+  }
+
+  /** 断开后复位全部流控状态（对照小程序 resetState） */
+  private fun resetFlowControl() {
+    synchronized(flowLock) {
+      sendQueue.clear()
+      pendingSends.clear()
+      isWriting = false
+      credits = 0
+    }
+    creditsReceived = false
+    mtuNegotiated = false
+    packetSize = DEFAULT_PACKET_SIZE
+    writeCharacteristic = null
+    notifyCharacteristic = null
+    handler.removeCallbacks(creditsTimeoutRunnable)
   }
 
   // GATT 回调
@@ -259,7 +400,12 @@ object BluetoothPrinterManager {
         BluetoothProfile.STATE_CONNECTED -> {
           connectInProgress = false
           connectionState = "connected"
-          g.discoverServices()
+          // 主动协商大 MTU（对照 wx.setBLEMTU(247)），成功后在 onMtuChanged 枚举服务
+          Log.d(TAG, "请求 MTU=$REQUEST_MTU")
+          if (!g.requestMtu(REQUEST_MTU)) {
+            Log.w(TAG, "requestMtu 发起失败，直接枚举服务")
+            g.discoverServices()
+          }
           dispatchOnMain { onConnected?.invoke(true) }
         }
         BluetoothProfile.STATE_DISCONNECTED -> {
@@ -267,7 +413,8 @@ object BluetoothPrinterManager {
           val previousState = connectionState
           connectInProgress = false
           connectionState = "disconnected"
-          targetCharacteristic = null
+          failPendingSends("连接已断开")
+          resetFlowControl()
           closeGatt()
           when {
             // 对照 iOS didFailToConnect
@@ -281,19 +428,38 @@ object BluetoothPrinterManager {
       }
     }
 
+    override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
+      if (status == BluetoothGatt.GATT_SUCCESS) {
+        // 有效载荷 = MTU - 3（ATT 头），作为 FF03 MTU 通知到达前的临时切片长度
+        packetSize = (mtu - 3).coerceAtLeast(DEFAULT_PACKET_SIZE)
+        mtuNegotiated = true
+        Log.d(TAG, "MTU 协商成功：mtu=$mtu, packetSize=$packetSize")
+      } else {
+        Log.w(TAG, "MTU 协商失败（status=$status），保持默认包大小 $DEFAULT_PACKET_SIZE")
+      }
+      g.discoverServices()
+    }
+
     override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
-      // 取所有 service 中第一个带 WRITE 属性的 characteristic
-      val chars = g.services.flatMap { it.characteristics }
       if (BuildConfig.DEBUG) {
-        chars.forEach { c ->
+        g.services.flatMap { it.characteristics }.forEach { c ->
           Log.d(TAG, "发现 characteristic: uuid=${c.uuid}, service=${c.service.uuid}, properties=${c.propertiesToString()}")
         }
       }
-      // 取所有 service 中第一个带 WRITE 属性的 characteristic（对照 iOS didDiscoverCharacteristicsFor）
-      targetCharacteristic = chars.firstOrNull { (it.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0) && it.service.uuid.toString().startsWith("0000FF00", true) }
-      if (targetCharacteristic == null) {
-        Log.w(TAG, "未找到可写 characteristic")
+
+      val service = g.getService(SERVICE_UUID)
+      val write = service?.getCharacteristic(WRITE_CHAR_UUID)
+      val notify = service?.getCharacteristic(NOTIFY_CHAR_UUID)
+      if (service == null || write == null || notify == null) {
+        // 服务/特征值缺失：主动断开物理连接，避免占用蓝牙资源（对照小程序 _forceDisconnect）
+        Log.w(TAG, "GATT 枚举不完整（ff00=${service != null}, ff02=${write != null}, ff03=${notify != null}），判定非目标设备，断开连接")
+        g.disconnect()
+        return
       }
+
+      writeCharacteristic = write
+      notifyCharacteristic = notify
+      enableFlowControlNotifications(g, notify)
     }
 
     // 注意：SDK 的 BluetoothGattCallback 没有带 value 的 onCharacteristicWrite
@@ -303,16 +469,84 @@ object BluetoothPrinterManager {
       characteristic: BluetoothGattCharacteristic,
       status: Int
     ) {
-      handleWriteResult(status)
+      if (status != BluetoothGatt.GATT_SUCCESS) {
+        Log.w(TAG, "写入失败，状态码: $status")
+        failPendingSends("写入失败，状态码: $status")
+        return
+      }
+
+      // writeNoResponse 的成功回调表示包已交付控制器队列：credits-1 并驱动下一包
+      synchronized(flowLock) {
+        credits = (credits - 1).coerceAtLeast(0)
+        if (sendQueue.isNotEmpty()) sendQueue.removeFirst()
+        isWriting = false
+        val pending = pendingSends.firstOrNull()
+        if (pending != null) {
+          pending.remaining--
+          if (pending.remaining <= 0) {
+            pendingSends.removeFirst()
+            dispatchOnMain { onDataSent?.invoke(SendResultData(success = true, error = null)) }
+          }
+        }
+      }
+      flushQueue()
     }
 
-    private fun handleWriteResult(status: Int) {
-      if (status == BluetoothGatt.GATT_SUCCESS) {
-        dispatchOnMain { onDataSent?.invoke(SendResultData(success = true, error = null)) }
-      } else {
-        dispatchOnMain { onDataSent?.invoke(SendResultData(success = false, error = "写入失败，状态码: $status")) }
+    // FF03 上行流控通知（对照小程序 onBLECharacteristicValueChange）。
+    // 只重写旧版两参回调：框架默认的新版三参实现会转发到这里，各版本系统均可收到。
+    @Deprecated("Deprecated in Java")
+    override fun onCharacteristicChanged(
+      g: BluetoothGatt,
+      characteristic: BluetoothGattCharacteristic
+    ) {
+      if (characteristic.uuid != NOTIFY_CHAR_UUID) return
+      @Suppress("DEPRECATION")
+      val value = characteristic.value ?: return
+      if (value.isEmpty()) return
+
+      when (value[0]) {
+        // (a) MTU 通知包：0x02 + 小端 16bit 单包最大字节数，覆盖协商值
+        NOTIFY_TYPE_MTU -> if (value.size >= 3) {
+          val size = (value[1].toInt() and 0xFF) or ((value[2].toInt() and 0xFF) shl 8)
+          packetSize = size
+          mtuNegotiated = true
+          Log.d(TAG, "FF03 MTU 通知：packetSize=$size")
+        }
+        // (b) Credits 通知包：0x01 + 增量配额，credits += N 并恢复挂起的发送
+        NOTIFY_TYPE_CREDITS -> if (value.size >= 2) {
+          val delta = value[1].toInt() and 0xFF
+          val first = !creditsReceived
+          creditsReceived = true
+          handler.removeCallbacks(creditsTimeoutRunnable)
+          synchronized(flowLock) { credits += delta }
+          if (first) Log.d(TAG, "收到首个 Credits（+$delta），开始下发数据")
+          flushQueue()
+        }
       }
     }
+  }
+
+  /** 启用 FF03 通知（MTU + Credits 流控通道），并启动 5 秒 Credits 等待提示 */
+  private fun enableFlowControlNotifications(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
+    if (!g.setCharacteristicNotification(ch, true)) {
+      Log.w(TAG, "setCharacteristicNotification(FF03) 失败")
+      return
+    }
+    val cccd = ch.getDescriptor(CCC_DESCRIPTOR_UUID)
+    if (cccd == null) {
+      Log.w(TAG, "FF03 缺少 CCC descriptor，无法启用通知")
+      return
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+    } else {
+      @Suppress("DEPRECATION")
+      cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+      @Suppress("DEPRECATION")
+      g.writeDescriptor(cccd)
+    }
+    handler.removeCallbacks(creditsTimeoutRunnable)
+    handler.postDelayed(creditsTimeoutRunnable, CREDITS_TIMEOUT_MS)
   }
 
   private fun closeGatt() {
