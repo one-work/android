@@ -27,17 +27,38 @@ class BluetoothComponent(
   private val prefs: SharedPreferences
     get() = fragment.requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-  // manager 回调设置 + 首次 ready 回调只做一次（对照 iOS CBCentralManager
-  // 初始化时 didUpdateState 只触发一次）。否则每条 JS 消息都会重复触发
-  // refreshReadyState -> replyTo("connect", ready=true)，与 JS 形成死循环。
-  private var didSetupManager = false
+  // 组件只会在 destination 处于 active 状态时因收到消息而被惰性创建
+  // （BridgeDelegate.bridgeDidReceiveMessage 会校验 destinationIsActive），
+  // 因此创建时即可安全接管全局 BluetoothPrinterManager 的回调。
+  init {
+    registerManagerCallbacks()
+  }
+
+  // 页面回到前台（如返回栈恢复）时组件早已存在、不会再走 init，
+  // 需要在这里重新接管回调，确保异步结果 reply 到当前页面的 WebView。
+  override fun onStart() {
+    super.onStart()
+    registerManagerCallbacks()
+  }
+
+  // 页面进入后台时释放回调，避免已销毁页面的旧组件"抢答"——
+  // 旧组件的 BridgeDelegate 在页面销毁后 bridge 已被置空，
+  // 再 reply 只会触发 "bridge is not available" 且 JS 永远收不到结果。
+  // 注意：仅当回调仍归本组件所有时才释放。返回栈恢复时新页面的 onStart
+  // 可能先于旧页面的 onStop 执行，不能误清新页面刚注册的回调。
+  override fun onStop() {
+    super.onStop()
+    if (callbackOwner === this) {
+      callbackOwner = null
+      BluetoothPrinterManager.onReady = null
+      BluetoothPrinterManager.onDeviceFound = null
+      BluetoothPrinterManager.onConnected = null
+      BluetoothPrinterManager.onDisconnected = null
+      BluetoothPrinterManager.onDataSent = null
+    }
+  }
 
   override fun onReceive(message: Message) {
-    if (!didSetupManager) {
-      didSetupManager = true
-      setupBluetoothManager()
-    }
-
     when (message.event) {
       "connect" -> handleConnect()
       "search" -> ensurePermissionsThen { BluetoothPrinterManager.startScan() }
@@ -83,10 +104,12 @@ class BluetoothComponent(
     launcher.launch(BluetoothPrinterManager.requiredPermissions())
   }
 
-  // setupBluetoothManager：先设置好各回调
-  private fun setupBluetoothManager() {
+  // registerManagerCallbacks：把全局 BluetoothPrinterManager 的各回调
+  // 绑定到本组件，并记录归属（供 onStop 判断是否由自己释放）。
+  private fun registerManagerCallbacks() {
+    callbackOwner = this
     BluetoothPrinterManager.onReady = { ready ->
-      val xx = ConnectStatus(address = prefs.getString("address", null), name = prefs.getString("name", null), ready = ready)
+      val xx = ConnectStatus(address = prefs.getString("address", null), name = prefs.getString("name", null), state = null, ready = ready)
       replyTo("connect", xx)
     }
     BluetoothPrinterManager.onDeviceFound = { device ->
@@ -102,8 +125,12 @@ class BluetoothComponent(
       replyTo("send_data", SendResult(success = result.success, error = result.error))
     }
 
-    // 蓝牙已开启时立即回调 onReady（对照 iOS CBCentralManager 初始化行为）
-    BluetoothPrinterManager.refreshReadyState()
+    // 首次 ready 回调整个进程只做一次（对照 iOS CBCentralManager 初始化时
+    // didUpdateState 只触发一次），避免重复 replyTo("connect") 与 JS 形成循环
+    if (!didRefreshReadyOnce) {
+      didRefreshReadyOnce = true
+      BluetoothPrinterManager.refreshReadyState()
+    }
   }
 
   private fun handleConnect() {
@@ -113,7 +140,7 @@ class BluetoothComponent(
 
     if (address != null) {
       val state = BluetoothPrinterManager.connectionState
-      val xx = ConnectStatus(address = address, name = name, state = state)
+      val xx = ConnectStatus(address = address, name = name, state = state, ready = null)
       replyTo("connect", xx)
     }
   }
@@ -173,13 +200,18 @@ class BluetoothComponent(
   private data class ConnectStatus(
     @SerialName("address") val address: String?,
     @SerialName("name") val name: String?,
-    @SerialName("state") val state: String = "",
-    @SerialName("ready") val ready: Boolean = false
+    @SerialName("state") val state: String?,
+    @SerialName("ready") val ready: Boolean?
   )
 
   private companion object {
     const val TAG = "BluetoothComponent"
     const val PREFS_NAME = "bluetooth"
     const val PERMISSION_REQUEST_KEY = "bluetooth_permissions"
+
+    // manager 回调当前归属的组件实例（只在前台页面间移交）
+    private var callbackOwner: BluetoothComponent? = null
+    // 首次 ready 回调是否已触发（整个进程只做一次）
+    private var didRefreshReadyOnce = false
   }
 }

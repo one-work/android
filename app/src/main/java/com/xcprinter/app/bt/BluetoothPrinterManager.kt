@@ -163,10 +163,7 @@ object BluetoothPrinterManager {
     stateReceiver = receiver
   }
 
-  /**
-   * 组件设置好 onReady 回调后调用：若蓝牙已开启立即回调 true
-   * （对照 iOS CBCentralManager 初始化时立即触发 didUpdateState）。
-   */
+  // 组件设置好 onReady 回调后调用：若蓝牙已开启立即回调 true
   fun refreshReadyState() {
     // API 31+ 调用 isEnabled 需要 BLUETOOTH_CONNECT 权限，否则抛 SecurityException
     if (hasBluetoothPermissions() && bluetoothAdapter?.isEnabled == true) {
