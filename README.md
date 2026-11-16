@@ -5,7 +5,7 @@
 ## 功能清单（对照 iOS）
 
 - **底部多 Tab**：Home（`/auth/apps`）、Help（<https://app-demo.xcprinter.com/README>）；连接本地开发服务器（`Demo.current = Demo.local`）时追加 "Bugs & Fixes"（`/bugs`）。使用库内置 `HotwireBottomNavigationController` + `HotwireBottomTab`，懒加载 tab。
-- **蓝牙打印**（`bluetooth` 桥接组件 + `bt/BluetoothPrinterManager`）：BLE 扫描（5 秒自动停止，只上报有名字的设备）、连接/断开、带响应写入第一个可写 characteristic，事件与 JSON 契约和 iOS 完全一致（`connect` / `search` / `connect_device` / `disconnect_device` / `send_data`）。
+- **蓝牙打印**（`bluetooth-sdk` + `bluetooth` 桥接组件）：独立 SDK 封装 BLE 扫描（5 秒自动停止，只上报有名字的设备）、连接/断开、MTU 协商、FF03 Credits 流控及 FF02 分包发送；App 只负责权限弹窗、设备偏好存储和 Hotwire 消息转换。事件与 JSON 契约和 iOS 完全一致（`connect` / `search` / `connect_device` / `disconnect_device` / `send_data`）。
 - **扫码**（`scan` 桥接组件）：zxing-android-embedded 全屏扫码，格式 QR_CODE、EAN_13、EAN_8、CODE_128、CODE_39、UPC_E、PDF_417；回复 `{"value":"..."}`，无相机设备回复 `{"value":null}`，取消不回复。
 - **原生 toolbar 按钮/菜单**：`right-button`（右上角文字按钮，点击回复 `connect`）、`overflow-menu`（右上角菜单项，点击路由到指定 URL，缺省 `/bluetooth/menus`）。
 - **跨域原生打开**：自定义 `ExternalRouteDecisionHandler` 让所有 http/https 链接（包括跨域）都在 App 内打开，非 http/https（mailto:、tel: 等）交给系统。
@@ -58,6 +58,10 @@ cd android
 
 ```
 android/
+  bluetooth-sdk/              # 可复用 BLE 打印机 SDK（含权限声明及集成文档）
+    src/main/java/com/xcprinter/sdk/bluetooth/
+      BluetoothPrinterManager.kt  # 扫描、连接、流控、分包发送
+      BluetoothPermissions.kt     # 运行时权限列表及授权检查
   app/src/main/
     java/com/xcprinter/app/
       XcPrinterApplication.kt      # Hotwire 全局配置（对照 iOS AppDelegate）
@@ -67,7 +71,7 @@ android/
       routing/ExternalRouteDecisionHandler.kt  # 跨域原生打开（对照 ExternalDecisionHandler.swift）
       features/web/                # WebFragment / WebBottomSheetFragment / 共享行为
       bridge/                      # 5 个桥接组件（scan/bluetooth/right-button/apple-sign-in/overflow-menu）
-      bt/BluetoothPrinterManager.kt           # BLE 管理器（对照 BluetoothManager.swift）
+                                 # BluetoothComponent 仅做 JS 契约与 SDK 的适配
     assets/path-configuration.json # 本地 path configuration（与 iOS 相同）
     assets/js/                     # 注入的 init_turbo.js / init.js（与 iOS 相同）
 ```

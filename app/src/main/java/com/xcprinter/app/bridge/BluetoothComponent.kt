@@ -10,8 +10,7 @@ import dev.hotwire.core.bridge.BridgeComponent
 import dev.hotwire.core.bridge.BridgeDelegate
 import dev.hotwire.core.bridge.Message
 import dev.hotwire.navigation.destinations.HotwireDestination
-import com.xcprinter.app.bt.BluetoothPrinterManager
-import com.xcprinter.app.bt.DeviceInfo
+import com.xcprinter.sdk.bluetooth.BluetoothPrinterManager
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -113,7 +112,7 @@ class BluetoothComponent(
       replyTo("connect", xx)
     }
     BluetoothPrinterManager.onDeviceFound = { device ->
-      replyTo("search", SearchResult(device = device))
+      replyTo("search", SearchResult(device = DeviceResult(name = device.name, address = device.address)))
     }
     BluetoothPrinterManager.onConnected = { success ->
       replyTo("connect_device", ConnectResult(success = success))
@@ -181,8 +180,14 @@ class BluetoothComponent(
 
   // 发送数据模型
   @Serializable
+  private data class DeviceResult(
+    @SerialName("name") val name: String?,
+    @SerialName("address") val address: String
+  )
+
+  @Serializable
   private data class SearchResult(
-    @SerialName("device") val device: DeviceInfo
+    @SerialName("device") val device: DeviceResult
   )
 
   @Serializable

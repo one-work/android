@@ -3,30 +3,13 @@
   
   <uses-permission android:name="android.permission.INTERNET" />
   
-  <!-- 蓝牙：Android 12 (API 31) 起的新权限 -->
-  <uses-permission
-      android:name="android.permission.BLUETOOTH_SCAN"
-      android:usesPermissionFlags="neverForLocation" />
-  <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-  <!-- 蓝牙：Android 11 (API 30) 及以下 -->
-  <uses-permission
-      android:name="android.permission.BLUETOOTH"
-      android:maxSdkVersion="30" />
-  <uses-permission
-      android:name="android.permission.BLUETOOTH_ADMIN"
-      android:maxSdkVersion="30" />
-  <uses-permission
-      android:name="android.permission.ACCESS_FINE_LOCATION"
-      android:maxSdkVersion="30" />
-  
+  <!-- 蓝牙权限与 BLE hardware feature 由 bluetooth-sdk 的 manifest 合并。 -->
+
   <!-- 扫码相机 -->
   <uses-permission android:name="android.permission.CAMERA" />
   
   <uses-feature
       android:name="android.hardware.camera"
-      android:required="false" />
-  <uses-feature
-      android:name="android.hardware.bluetooth_le"
       android:required="false" />
   
   <application

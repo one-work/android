@@ -17,7 +17,7 @@ import com.xcprinter.app.bridge.BluetoothComponent
 import com.xcprinter.app.bridge.OverflowMenuComponent
 import com.xcprinter.app.bridge.RightButtonComponent
 import com.xcprinter.app.bridge.ScanComponent
-import com.xcprinter.app.bt.BluetoothPrinterManager
+import com.xcprinter.sdk.bluetooth.BluetoothPrinterManager
 import com.xcprinter.app.features.web.WebBottomSheetFragment
 import com.xcprinter.app.features.web.WebFragment
 import com.xcprinter.app.routing.ExternalRouteDecisionHandler
@@ -27,6 +27,7 @@ class XcPrinterApplication : Application() {
     super.onCreate()
     configureHotwire()
     BluetoothPrinterManager.initialize(this)
+    BluetoothPrinterManager.isDebugLoggingEnabled = BuildConfig.DEBUG
   }
 
   private fun configureHotwire() {

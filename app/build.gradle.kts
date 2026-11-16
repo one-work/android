@@ -49,6 +49,8 @@ kotlin {
 }
 
 dependencies {
+  implementation(project(":bluetooth-sdk"))
+
   // Hotwire Native
   implementation("dev.hotwire:core:1.3.1")
   implementation("dev.hotwire:navigation-fragments:1.3.1")

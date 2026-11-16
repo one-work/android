@@ -18,3 +18,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Xcprinter"
 include(":app")
+include(":bluetooth-sdk")
