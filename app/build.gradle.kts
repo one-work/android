@@ -49,7 +49,7 @@ kotlin {
 }
 
 dependencies {
-  implementation(project(":bluetooth-sdk"))
+  implementation(files("xcprinter.aar"))
 
   // Hotwire Native
   implementation("dev.hotwire:core:1.4.1")
